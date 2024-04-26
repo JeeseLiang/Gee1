@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 type H map[string]interface{}
+
+var mux sync.Mutex
 
 type Context struct {
 	// origin objects
@@ -20,15 +23,27 @@ type Context struct {
 	Params map[string]string
 	// response info
 	StatusCode int
+	// middleware
+	handlers []HandlerFunc
+	idx      int
 }
 
 func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 	return &Context{
-		Writer: w,
-		Req:    r,
-		Method: r.Method,
-		Path:   r.URL.Path,
-		Params: map[string]string{},
+		Writer:   w,
+		Req:      r,
+		Method:   r.Method,
+		Path:     r.URL.Path,
+		Params:   map[string]string{},
+		handlers: []HandlerFunc{},
+		idx:      -1,
+	}
+}
+
+func (c *Context) Next() {
+	c.idx++
+	for i := 0; i < len(c.handlers); i++ {
+		c.handlers[i](c)
 	}
 }
 
@@ -39,7 +54,11 @@ func (c *Context) Query(key string) string {
 func (c *Context) PostForm(key string) string {
 	return c.Req.FormValue(key)
 }
+
 func (c *Context) Status(code int) {
+	if c.StatusCode == code { // 避免重复设置状态码
+		return
+	}
 	c.StatusCode = code
 	c.Writer.WriteHeader(code)
 }
